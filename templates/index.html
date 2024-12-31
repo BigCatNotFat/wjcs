@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <title>传输助手</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        /* 容器高度与布局设置 */
+        #chat-container {
+            height: calc(100vh - 160px); /* 适当调整高度，留出上方标题和一些空白 */
+            display: flex;
+            flex-direction: column;
+        }
+        #message-list {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        .message-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 14rem; /* 大约显示 10 行 */
+            overflow: hidden;
+            position: relative;
+        }
+        .show-more {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0), white);
+        }
+        .show-more button {
+            background-color: rgba(255, 255, 255, 0.8);
+            border: none;
+            cursor: pointer;
+            padding: 0.5rem;
+        }
+        #message-input {
+            min-height: 60px;
+            max-height: 200px;
+            overflow-y: auto;
+            resize: none;
+        }
+        #file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .file-item {
+            background-color: #f3f4f6;
+            border-radius: 4px;
+            padding: 5px;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        @media (max-width: 640px) {
+            #message-form {
+                flex-direction: column;
+            }
+            #message-form .flex {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            #message-form .flex .mr-2 {
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
+            #message-form .flex .w-full {
+                width: 100%;
+            }
+        }
+        #file-options-modal, #full-text-modal, #action-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1001;
+        }
+        #file-options-modal .modal-content,
+        #full-text-modal .modal-content,
+        #action-modal .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-height: 80%;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        #full-text-content, #action-modal-content {
+            text-align: left;
+        }
+        #fab {
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            z-index: 1000;
+            background-color: #3b82f6;
+            color: white;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+        }
+        #input-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1001;
+            width: calc(100% - 40px);
+            max-width: 500px;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            display: none;
+            flex-direction: column;
+        }
+        #input-container.active {
+            display: flex;
+        }
+        #clear-file, #clear-text {
+            cursor: pointer;
+            color: red;
+        }
+        .copy-notification {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #323232;
+            color: #ffffff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 2000;
+        }
+        .copy-notification.show {
+            opacity: 1;
+        }
+        /* 上传进度弹窗 */
+        #upload-modal {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(100, 100, 100, 0.5);
+            display: none;
+            z-index: 9999;
+        }
+        #upload-modal .modal-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            width: 320px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <!-- 页面标题 -->
+
+    <div class="container mx-auto max-w-4xl px-4 flex flex-col" style="height: calc(100vh - 120px);">
+        <!-- 文件网格 -->
+        <div id="file-grid" class="mb-4"></div>
+
+        <!-- 聊天容器 -->
+        <div id="chat-container" class="bg-white rounded-lg shadow-md p-4">
+            <div id="message-list">
+                <!-- Messages will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Button for Desktop -->
+    <div id="fab">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" 
+             viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                  d="M12 4v16m8-8H4" />
+        </svg>
+    </div>
+
+    <!-- Input Container -->
+    <div id="input-container">
+        <form id="message-form" class="flex flex-col">
+            <div class="flex items-center mb-2">
+                <textarea id="message-input" class="w-full p-2 border rounded mb-2"
+                          placeholder="Type your message..." rows="3"></textarea>
+                <span id="clear-text" class="ml-2">&times;</span>
+            </div>
+            <div class="flex items-center mb-2">
+                <input type="file" id="file-input" class="hidden">
+                <button type="button" id="attach-button" class="bg-gray-500 text-white p-2 rounded mr-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" 
+                         viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586
+                                 a4 4 0 00-5.656-5.656l-6.415 6.585
+                                 a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                </button>
+                <span id="file-name" class="mr-2"></span>
+                <span id="clear-file" class="hidden">&times;</span>
+            </div>
+            <div id="rename-section" class="flex items-center mb-2 hidden">
+                <input type="checkbox" id="rename-file" class="mr-2"> 重命名
+                <input type="text" id="new-filename" class="w-full p-2 border rounded mb-2 ml-2" 
+                       placeholder="New filename (without extension)" disabled>
+            </div>
+            <div class="flex items-center">
+                <button type="submit" id="send-button" 
+                        class="bg-blue-500 text-white p-2 rounded w-full" disabled>发送</button>
+            </div>
+        </form>
+    </div>
+    <div id="copy-notification" class="copy-notification">复制到粘贴板</div>
+
+    <!-- 上传进度弹窗 -->
+    <div id="upload-modal">
+        <div class="modal-box">
+            <h3 class="text-lg font-medium">上传文件</h3>
+            <div class="mt-2">
+                <div class="bg-gray-200 rounded-full h-2.5">
+                    <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                </div>
+                <p id="upload-status" class="text-sm text-gray-500 mt-2"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Options Modal -->
+    <div id="file-options-modal" class="flex">
+        <div class="modal-content">
+            <h3 id="file-options-title" class="text-lg font-medium"></h3>
+            <div class="mt-4">
+                <button id="preview-button" class="bg-blue-500 text-white p-2 rounded mb-2 w-full">在线预览</button>
+                <button id="download-button" class="bg-green-500 text-white p-2 rounded mb-2 w-full">下载文件</button>
+                <button id="locate-button" class="bg-yellow-500 text-white p-2 rounded mb-2 w-full">定位文件</button>
+                <button id="cancel-button" class="bg-red-500 text-white p-2 rounded w-full">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Modal -->
+    <div id="action-modal" class="flex">
+        <div class="modal-content">
+            <h3 class="text-lg font-medium">选择操作</h3>
+            <div id="action-modal-content" class="mt-4 text-left">
+                <button id="pin-button" class="bg-blue-500 text-white p-2 rounded mb-2 w-full">置顶/取消置顶</button>
+                <button id="delete-button" class="bg-red-500 text-white p-2 rounded w-full">删除文件</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full Text Modal -->
+    <div id="full-text-modal" class="flex">
+        <div class="modal-content">
+            <h3 class="text-lg font-medium">Full Message</h3>
+            <div id="full-text-content" class="mt-4 text-left"></div>
+        </div>
+    </div>
+
+    <!-- Socket.io -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        // 连接 Socket.io，并从 LocalStorage 中读取 sessionID
+        const socket = io({
+            auth: {
+                sessionID: localStorage.getItem("sessionID")
+            }
+        });
+        
+        // 获取页面元素
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const fileInput = document.getElementById('file-input');
+        const attachButton = document.getElementById('attach-button');
+        const messageList = document.getElementById('message-list');
+        const fileName = document.getElementById('file-name');
+        const clearFile = document.getElementById('clear-file');
+        const clearText = document.getElementById('clear-text');
+        const renameFileCheckbox = document.getElementById('rename-file');
+        const newFilenameInput = document.getElementById('new-filename');
+        const uploadModal = document.getElementById('upload-modal');
+        const progressBar = document.getElementById('progress-bar');
+        const uploadStatus = document.getElementById('upload-status');
+        const fileGrid = document.getElementById('file-grid');
+        const sendButton = document.getElementById('send-button');
+        const renameSection = document.getElementById('rename-section');
+        const fileOptionsModal = document.getElementById('file-options-modal');
+        const previewButton = document.getElementById('preview-button');
+        const downloadButton = document.getElementById('download-button');
+        const locateButton = document.getElementById('locate-button');
+        const cancelButton = document.getElementById('cancel-button');
+        const fullTextModal = document.getElementById('full-text-modal');
+        const fullTextContent = document.getElementById('full-text-content');
+        const fab = document.getElementById('fab');
+        const inputContainer = document.getElementById('input-container');
+        const fileOptionsTitle = document.getElementById('file-options-title');
+        const actionModal = document.getElementById('action-modal');
+        const pinButton = document.getElementById('pin-button');
+        const deleteButton = document.getElementById('delete-button');
+        const copyNotification = document.getElementById('copy-notification');
+        
+        let selectedFileUrl = '';
+        let selectedMessageId = null;
+        let longPressTimeout = null;
+        let clipboardData = null;
+        let startTime = 0; // 记录上传开始时间，用于计算速度
+        
+        // 从后端获取 sessionID 并存到 localStorage
+        socket.on('session', ({ sessionID, userID }) => {
+            socket.auth = { sessionID };
+            localStorage.setItem("sessionID", sessionID);
+            localStorage.setItem("userID", userID);
+        });
+        
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+        });
+        
+        // 点击附件按钮，触发文件选择对话框
+        attachButton.addEventListener('click', () => fileInput.click());
+        
+        // 当文件选择发生变化时，更新界面
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                fileName.textContent = e.target.files[0].name;
+                clearFile.classList.remove('hidden');
+                renameSection.classList.remove('hidden');
+                updateSendButtonState();
+            } else {
+                clearFile.classList.add('hidden');
+                fileName.textContent = '';
+                renameSection.classList.add('hidden');
+                updateSendButtonState();
+            }
+        });
+        
+        // 清空文件
+        clearFile.addEventListener('click', () => {
+            fileInput.value = '';
+            fileName.textContent = '';
+            clearFile.classList.add('hidden');
+            renameSection.classList.add('hidden');
+            updateSendButtonState();
+        });
+        
+        // 清空文本
+        clearText.addEventListener('click', () => {
+            messageInput.value = '';
+            updateSendButtonState();
+        });
+        
+        // 是否重命名文件
+        renameFileCheckbox.addEventListener('change', () => {
+            newFilenameInput.disabled = !renameFileCheckbox.checked;
+        });
+        
+        // 文本内容变化时，更新 Send 按钮状态
+        messageInput.addEventListener('input', updateSendButtonState);
+        
+        // 悬浮按钮 FAB：双击时尝试从剪贴板读取文本
+        fab.addEventListener('dblclick', async () => {
+            inputContainer.classList.add('active');
+            try {
+                // 可能在某些环境下需要用户授权
+                clipboardData = await navigator.clipboard.readText();
+                messageInput.value = clipboardData;
+                updateSendButtonState();
+            } catch (err) {
+                console.warn("Clipboard read failed: ", err);
+            }
+        });
+        
+        // 悬浮按钮 FAB：单击时打开/关闭输入容器
+        fab.addEventListener('click', () => {
+            inputContainer.classList.toggle('active');
+        });
+        
+        // 如果点击其他区域，且不是 FAB 或输入容器，则关闭输入容器
+        document.addEventListener('click', (event) => {
+            if (!inputContainer.contains(event.target) && !fab.contains(event.target)) {
+                inputContainer.classList.remove('active');
+            }
+        });
+        
+        function updateSendButtonState() {
+            sendButton.disabled = messageInput.value.trim() === '' && fileInput.files.length === 0;
+        }
+        
+        // 表单提交事件：文件上传 + 文本发送
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (messageInput.value.trim() === '' && fileInput.files.length === 0) {
+                return;
+            }
+            
+            // 构造 FormData 用于上传
+            const formData = new FormData();
+            formData.append('text', messageInput.value);
+            
+            // 如果有文件
+            if (fileInput.files.length > 0) {
+                let file = fileInput.files[0];
+                
+                // 如果勾选了重命名，并且填写了新文件名
+                if (renameFileCheckbox.checked && newFilenameInput.value.trim() !== '') {
+                    let newFilename = newFilenameInput.value.trim();
+                    formData.append('new_filename', newFilename);
+                    let extension = file.name.split('.').pop();
+                    let renamedFile = new File([file], `${newFilename}.${extension}`, { type: file.type });
+                    formData.append('file', renamedFile);
+                } else {
+                    formData.append('file', file);
+                }
+                // 显示上传进度弹窗
+                uploadModal.style.display = 'block';
+                progressBar.style.width = '0%';
+                uploadStatus.textContent = '0% - 0 B/s';
+            }
+            
+            // 使用 XMLHttpRequest 上传
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            
+            startTime = Date.now();
+            
+            // 上传进度
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                    
+                    const elapsedTime = Date.now() - startTime;
+                    let speed = 0;
+                    if (elapsedTime > 0) {
+                        speed = event.loaded / (elapsedTime / 1000); // bytes/s
+                    }
+                    uploadStatus.textContent = `
+                        ${percentComplete.toFixed(2)}% - ${formatBytes(speed)}/s
+                    `;
+                }
+            };
+            
+            // 当请求成功返回后才隐藏弹窗
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.success) {
+                            // 隐藏进度弹窗
+                            uploadModal.style.display = 'none';
+                            progressBar.style.width = '0%';
+                            uploadStatus.textContent = '';
+                            
+                            // 重置表单
+                            messageInput.value = '';
+                            fileInput.value = '';
+                            fileName.textContent = '';
+                            clearFile.classList.add('hidden');
+                            renameSection.classList.add('hidden');
+                            updateSendButtonState();
+                            inputContainer.classList.remove('active');
+                        } else {
+                            alert('Upload failed.');
+                        }
+                    } catch (err) {
+                        console.warn('Response parse error:', err);
+                        alert('Upload failed.');
+                    }
+                } else {
+                    alert('Upload error: ' + xhr.status);
+                }
+            };
+            
+            // 如果要处理错误情况：
+            xhr.onerror = () => {
+                alert('An error occurred while uploading the file.');
+            };
+
+            xhr.send(formData);
+        });
+        
+        // 将字节数转化为可读格式
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+        
+        // 创建消息 DOM
+        function createMessageElement(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'mb-4 p-4 bg-gray-50 rounded-lg flex justify-between items-start';
+            if (message.is_pinned) {
+                messageDiv.classList.add('border-2', 'border-blue-500');
+            }
+            messageDiv.dataset.messageId = message.id;
+        
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'flex-grow';
+        
+            // 时间戳
+            const timestampP = document.createElement('p');
+            timestampP.className = 'text-xs text-gray-500 mb-1';
+            // 这里直接用字符串让浏览器去解析，一般会被视为本地时间，也可改为 +08:00 格式
+            timestampP.textContent = new Date(message.timestamp).toLocaleString();
+            contentDiv.appendChild(timestampP);
+        
+            // 文本内容
+            if (message.text) {
+                const textP = document.createElement('p');
+                textP.className = 'text-gray-800 message-text';
+                textP.textContent = message.text;
+        
+                // 如果文本行数>10，显示 "More" 按钮
+                const lineCount = (message.text.match(/\n/g) || []).length + 1;
+                if (lineCount > 10) {
+                    const showMoreDiv = document.createElement('div');
+                    showMoreDiv.className = 'show-more';
+                    const showMoreButton = document.createElement('button');
+                    showMoreButton.textContent = 'More';
+                    showMoreButton.addEventListener('click', () => {
+                        fullTextContent.textContent = message.text;
+                        fullTextModal.style.display = 'flex';
+                    });
+                    showMoreDiv.appendChild(showMoreButton);
+                    textP.appendChild(showMoreDiv);
+                }
+                contentDiv.appendChild(textP);
+            }
+        
+            // 文件预览
+            if (message.filename) {
+                const fileLink = document.createElement('a');
+                fileLink.href = 'javascript:void(0)';
+                fileLink.className = 'text-blue-500 hover:underline';
+                fileLink.textContent = `View: ${message.original_filename || message.filename} (${formatBytes(message.file_size)})`;
+                fileLink.addEventListener('click', () => {
+                    selectedFileUrl = `/uploads/${encodeURIComponent(message.filename)}`;
+                    selectedMessageId = message.id;
+                    fileOptionsTitle.textContent = message.original_filename || message.filename;
+                    fileOptionsModal.style.display = 'flex';
+                });
+                contentDiv.appendChild(fileLink);
+            }
+        
+            messageDiv.appendChild(contentDiv);
+        
+            // 双击消息，打开操作菜单（Pin / Delete）
+            messageDiv.addEventListener('dblclick', () => {
+                selectedMessageId = message.id;
+                actionModal.style.display = 'flex';
+            });
+        
+            // 长按（1秒）复制文本
+            messageDiv.addEventListener('mousedown', () => {
+                longPressTimeout = setTimeout(() => {
+                    navigator.clipboard.writeText(message.text || '').then(() => {
+                        showCopyNotification();
+                    });
+                }, 1000);
+            });
+            messageDiv.addEventListener('mouseup', () => {
+                clearTimeout(longPressTimeout);
+            });
+        
+            return messageDiv;
+        }
+        
+        // 显示“复制成功”
+        function showCopyNotification() {
+            copyNotification.classList.add('show');
+            setTimeout(() => {
+                copyNotification.classList.remove('show');
+            }, 2000);
+        }
+        
+        // 置顶消息
+        function togglePin(messageId) {
+            fetch(`/toggle_pin/${messageId}`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 服务器会发出 update_messages
+                    }
+                });
+        }
+        
+        // 删除消息
+        function deleteMessage(messageId) {
+            if (confirm('Are you sure you want to delete this message?')) {
+                fetch(`/delete_message/${messageId}`, { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // 服务器会发出 update_messages
+                        }
+                    });
+            }
+        }
+        
+        // File Options Modal按钮
+        previewButton.addEventListener('click', () => {
+            // 在线预览
+            window.open(selectedFileUrl, '_blank');
+            fileOptionsModal.style.display = 'none';
+        });
+        
+        downloadButton.addEventListener('click', () => {
+            // 下载
+            // 注意此处走的是 /download/<filename> 路由
+            const filename = selectedFileUrl.split('/').pop();
+            const downloadUrl = '/download/' + filename;
+            window.open(downloadUrl, '_blank');
+            fileOptionsModal.style.display = 'none';
+        });
+        
+        locateButton.addEventListener('click', () => {
+            // 在消息列表中定位该条消息
+            const messageElement = document.querySelector(`[data-message-id="${selectedMessageId}"]`);
+            if (messageElement) {
+                messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                messageElement.classList.add('bg-yellow-200');
+                setTimeout(() => {
+                    messageElement.classList.remove('bg-yellow-200');
+                }, 2000);
+            }
+            fileOptionsModal.style.display = 'none';
+        });
+        
+        cancelButton.addEventListener('click', () => {
+            fileOptionsModal.style.display = 'none';
+        });
+        
+        // 点击空白区域退出大文本预览
+        fullTextModal.addEventListener('click', (event) => {
+            if (event.target === fullTextModal) {
+                fullTextModal.style.display = 'none';
+            }
+        });
+        // 点击空白区域退出操作弹窗
+        actionModal.addEventListener('click', (event) => {
+            if (event.target === actionModal) {
+                actionModal.style.display = 'none';
+            }
+        });
+        
+        // Pin / Delete
+        pinButton.addEventListener('click', () => {
+            togglePin(selectedMessageId);
+            actionModal.style.display = 'none';
+        });
+        deleteButton.addEventListener('click', () => {
+            deleteMessage(selectedMessageId);
+            actionModal.style.display = 'none';
+        });
+        
+        // 更新消息列表
+        function updateMessages(messages) {
+            messageList.innerHTML = '';
+            const pinnedMessages = messages.filter(m => m.is_pinned);
+            const unpinnedMessages = messages.filter(m => !m.is_pinned);
+        
+            // 先渲染未置顶的
+            unpinnedMessages.forEach(message => {
+                messageList.appendChild(createMessageElement(message));
+            });
+            // 再把置顶的逆序插到前
+            pinnedMessages.reverse().forEach(message => {
+                messageList.insertBefore(createMessageElement(message), messageList.firstChild);
+            });
+            
+            // 更新文件网格
+            updateFileGrid(messages);
+            // 保证滚动到顶部
+            messageList.scrollTop = 0;
+        }
+        
+        // 更新文件网格
+        function updateFileGrid(messages) {
+            fileGrid.innerHTML = '';
+            const files = messages.filter(m => m.filename).map(m => ({
+                id: m.id,
+                filename: m.filename,
+                original_filename: m.original_filename,
+                file_size: m.file_size
+            }));
+        
+            files.forEach(file => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                
+                const fileLink = document.createElement('a');
+                fileLink.href = 'javascript:void(0)';
+                fileLink.className = 'text-blue-500 hover:underline';
+                fileLink.title = `${file.original_filename || file.filename} (${formatBytes(file.file_size)})`;
+                fileLink.textContent = file.original_filename || file.filename;
+                
+                fileLink.addEventListener('click', () => {
+                    selectedFileUrl = `/uploads/${encodeURIComponent(file.filename)}`;
+                    selectedMessageId = file.id;
+                    fileOptionsTitle.textContent = file.original_filename || file.filename;
+                    fileOptionsModal.style.display = 'flex';
+                });
+                
+                fileItem.appendChild(fileLink);
+                fileGrid.appendChild(fileItem);
+            });
+        }
+        
+        // 服务器推送最新消息
+        socket.on('update_messages', (data) => {
+            updateMessages(data.messages);
+        });
+        
+        // 页面初始化时，获取消息
+        fetch('/messages')
+            .then(response => response.json())
+            .then(messages => {
+                updateMessages(messages);
+            });
+        
+        // 拖拽文件到浏览器
+        document.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        
+        document.addEventListener('drop', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+        
+            if (event.dataTransfer.files.length > 0) {
+                inputContainer.classList.add('active');
+                fileInput.files = event.dataTransfer.files;
+                const file = fileInput.files[0];
+                fileName.textContent = file.name;
+                clearFile.classList.remove('hidden');
+                renameSection.classList.remove('hidden');
+                updateSendButtonState();
+            }
+        });
+        
+        // 监听粘贴事件：自动填充文本或文件
+        document.addEventListener('paste', (event) => {
+            const clipboardData = event.clipboardData || window.clipboardData;
+            const items = clipboardData.items;
+        
+            if (inputContainer.classList.contains('active')) {
+                return;
+            }
+        
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].kind === 'file') {
+                        const file = items[i].getAsFile();
+                        inputContainer.classList.add('active');
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        fileInput.files = dt.files;
+                        
+                        fileName.textContent = file.name;
+                        clearFile.classList.remove('hidden');
+                        renameSection.classList.remove('hidden');
+                        updateSendButtonState();
+                        event.preventDefault();
+                        break;
+                    } else if (items[i].kind === 'string') {
+                        items[i].getAsString((text) => {
+                            inputContainer.classList.add('active');
+                            messageInput.value = text;
+                            updateSendButtonState();
+                        });
+                        event.preventDefault();
+                        break;
+                    }
+                }
+            }
+        });
+        
+        // 自动调整文本域高度
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+    </script>
+</body>
+</html>
